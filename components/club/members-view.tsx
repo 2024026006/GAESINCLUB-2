@@ -37,19 +37,23 @@ interface Props {
 export function MembersView({ clubId, userId, members: initMembers, requests: initRequests, isPresident }: Props) {
   const [members, setMembers] = useState(initMembers)
   const [requests, setRequests] = useState(initRequests)
+  const [selectedRoles, setSelectedRoles] = useState<Record<string, MemberRole>>({})
 
-  const handleRequest = async (reqId: string, userId: string, action: 'approved' | 'rejected' | 'on_hold') => {
+  const handleRequest = async (reqId: string, reqUserId: string, action: 'approved' | 'rejected' | 'on_hold') => {
     const supabase = createClient()
     await supabase.from('join_requests').update({ status: action }).eq('id', reqId)
 
     if (action === 'approved') {
-      await supabase.from('club_members').insert({ club_id: clubId, user_id: userId, role: 'member' })
-      toast.success('가입을 승인했습니다.')
+      const role: MemberRole = selectedRoles[reqId] ?? 'member'
+      await supabase.from('club_members').insert({ club_id: clubId, user_id: reqUserId, role })
+      const roleLabel = role === 'staff' ? '임원' : role === 'treasurer' ? '총무' : '일반 부원'
+      toast.success(`가입을 승인했습니다. (역할: ${roleLabel})`)
     } else {
       toast.success(action === 'rejected' ? '가입을 거절했습니다.' : '보류 처리했습니다.')
     }
 
     setRequests((prev) => prev.filter((r) => r.id !== reqId))
+    setSelectedRoles((prev) => { const next = { ...prev }; delete next[reqId]; return next })
   }
 
   const changeRole = async (memberId: string, role: MemberRole) => {
@@ -80,18 +84,29 @@ export function MembersView({ clubId, userId, members: initMembers, requests: in
           {requests.length === 0 && <p className="text-center py-10 text-muted-foreground">대기 중인 신청이 없습니다.</p>}
           {requests.map((req) => (
             <Card key={req.id}>
-              <CardContent className="py-3 px-4 space-y-2">
+              <CardContent className="py-3 px-4 space-y-3">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="font-medium text-sm">{req.profile?.name ?? '알 수 없음'}</p>
                     <p className="text-xs text-muted-foreground">{req.profile?.student_id} · {req.profile?.department}</p>
                     {req.message && <p className="text-xs mt-1 text-muted-foreground">{req.message}</p>}
                   </div>
-                  <div className="flex gap-2 shrink-0">
-                    <Button size="sm" onClick={() => handleRequest(req.id, req.user_id, 'approved')}>승인</Button>
-                    <Button size="sm" variant="outline" onClick={() => handleRequest(req.id, req.user_id, 'on_hold')}>보류</Button>
-                    <Button size="sm" variant="destructive" onClick={() => handleRequest(req.id, req.user_id, 'rejected')}>거절</Button>
-                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Select
+                    value={selectedRoles[req.id] ?? 'member'}
+                    onValueChange={(v) => v && setSelectedRoles((prev) => ({ ...prev, [req.id]: v as MemberRole }))}
+                  >
+                    <SelectTrigger className="w-28 h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="member">일반 부원</SelectItem>
+                      <SelectItem value="staff">임원</SelectItem>
+                      <SelectItem value="treasurer">총무</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button size="sm" onClick={() => handleRequest(req.id, req.user_id, 'approved')}>승인</Button>
+                  <Button size="sm" variant="outline" onClick={() => handleRequest(req.id, req.user_id, 'on_hold')}>보류</Button>
+                  <Button size="sm" variant="destructive" onClick={() => handleRequest(req.id, req.user_id, 'rejected')}>거절</Button>
                 </div>
               </CardContent>
             </Card>
